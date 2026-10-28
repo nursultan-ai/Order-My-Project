@@ -1,54 +1,64 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from mysite.database.models import Product
+from mysite.database.schemas import ProductOutSchema, ProductInputSchema
+from mysite.database.db import SessionLocal
 from sqlalchemy.orm import Session
 from typing import List
-from mysite.database.db import get_db
-from mysite.database.models import Product
-from mysite.database.schema import ProductCreate, ProductUpdate, ProductResponse
 
-product_router = APIRouter(prefix="/products", tags=["Products"])
+product_router = APIRouter(prefix='/product', tags=['Product'])
 
 
-@product_router.post("/", response_model=ProductResponse)
-def create_product(product: ProductCreate, db: Session = Depends(get_db)):
-    new_product = Product(**product.model_dump())
-    db.add(new_product)
+async def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@product_router.post('/', response_model=ProductOutSchema)
+async def create_product(product: ProductInputSchema, db: Session = Depends(get_db)):
+    product_db = Product(**product.dict())
+    db.add(product_db)
     db.commit()
-    db.refresh(new_product)
-    return new_product
+    db.refresh(product_db)
+    return product_db
 
 
-@product_router.get("/", response_model=List[ProductResponse])
-def get_products(db: Session = Depends(get_db)):
+@product_router.get('/', response_model=List[ProductOutSchema])
+async def list_product(db: Session = Depends(get_db)):
     return db.query(Product).all()
 
 
-@product_router.get("/{product_id}", response_model=ProductResponse)
-def get_product(product_id: int, db: Session = Depends(get_db)):
-    product = db.query(Product).filter(Product.id == product_id).first()
-    if not product:
-        raise HTTPException(status_code=404, detail="Продукт не найден")
-    return product
+@product_router.get('/{product_id}/', response_model=ProductOutSchema)
+async def detail_product(product_id: int, db: Session = Depends(get_db)):
+    product_db = db.query(Product).filter(Product.id == product_id).first()
+    if not product_db:
+        raise HTTPException(detail='Продукт не найден', status_code=400)
+
+    return product_db
 
 
-@product_router.put("/{product_id}", response_model=ProductResponse)
-def update_product(product_id: int, product_data: ProductUpdate, db: Session = Depends(get_db)):
-    product = db.query(Product).filter(Product.id == product_id).first()
-    if not product:
-        raise HTTPException(status_code=404, detail="Продукт не найден")
+@product_router.put('/{product_id}/', response_model=dict)
+async def update_product(product_id: int, product: ProductInputSchema, db: Session = Depends(get_db)):
+    product_db = db.query(Product).filter(Product.id == product_id).first()
+    if not product_db:
+        raise HTTPException(detail='Продукт не найден', status_code=400)
 
-    for key, value in product_data.model_dump(exclude_unset=True).items():
-        setattr(product, key, value)
+    for product_key, product_value in product.dict().items():
+        setattr(product_db, product_key, product_value)
 
     db.commit()
-    db.refresh(product)
-    return product
+    db.refresh(product_db)
+    return {'message': 'Продукт изменен'}
 
 
-@product_router.delete("/{product_id}")
-def delete_product(product_id: int, db: Session = Depends(get_db)):
-    product = db.query(Product).filter(Product.id == product_id).first()
-    if not product:
-        raise HTTPException(status_code=404, detail="Продукт не найден")
-    db.delete(product)
+@product_router.delete('/{product_id}/', response_model=dict)
+async def delete_product(product_id: int, db: Session = Depends(get_db)):
+    product_db = db.query(Product).filter(Product.id == product_id).first()
+    if not product_db:
+        raise HTTPException(detail='Продукт не найден', status_code=400)
+
+    db.delete(product_db)
     db.commit()
-    return {"message": "Продукт удален"}
+    return {'message': 'Продукт удален'}

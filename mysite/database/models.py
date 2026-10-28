@@ -2,6 +2,14 @@ from sqlalchemy import Column, Integer, String, Float, Text, DateTime, ForeignKe
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from mysite.database.db import Base
+from enum import Enum as PyEnum
+
+
+
+class OrderStatusChoices(str, PyEnum):
+    pending = "pending"
+    confirmed = "confirmed"
+    cancelled = "cancelled"
 
 class User(Base):
     __tablename__ = "users"

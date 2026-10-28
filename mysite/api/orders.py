@@ -1,31 +1,64 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from mysite.database.models import Order
+from mysite.database.schemas import OrderOutSchema, OrderInputSchema
+from mysite.database.db import SessionLocal
 from sqlalchemy.orm import Session
 from typing import List
-from mysite.database.db import get_db
-from mysite.database.models import Order, User, Product
-from mysite.database.schema import OrderCreate, OrderResponse
 
-order_router = APIRouter(prefix="/orders", tags=["Orders"])
+order_router = APIRouter(prefix='/order', tags=['Order'])
 
 
-@order_router.post("/", response_model=OrderResponse)
-def create_order(order: OrderCreate, db: Session = Depends(get_db)):
-    # Проверяем, существует ли пользователь и продукт
-    user = db.query(User).filter(User.id == order.user_id).first()
-    product = db.query(Product).filter(Product.id == order.product_id).first()
+async def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
-    if not user:
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
-    if not product:
-        raise HTTPException(status_code=404, detail="Товар не найден")
 
-    new_order = Order(**order.model_dump())
-    db.add(new_order)
+@order_router.post('/', response_model=OrderOutSchema)
+async def create_order(order: OrderInputSchema, db: Session = Depends(get_db)):
+    order_db = Order(**order.dict())
+    db.add(order_db)
     db.commit()
-    db.refresh(new_order)
-    return new_order
+    db.refresh(order_db)
+    return order_db
 
 
-@order_router.get("/", response_model=List[OrderResponse])
-def get_orders(db: Session = Depends(get_db)):
+@order_router.get('/', response_model=List[OrderOutSchema])
+async def list_order(db: Session = Depends(get_db)):
     return db.query(Order).all()
+
+
+@order_router.get('/{order_id}/', response_model=OrderOutSchema)
+async def detail_order(order_id: int, db: Session = Depends(get_db)):
+    order_db = db.query(Order).filter(Order.id == order_id).first()
+    if not order_db:
+        raise HTTPException(detail='Заказ не найден', status_code=400)
+
+    return order_db
+
+
+@order_router.put('/{order_id}/', response_model=dict)
+async def update_order(order_id: int, order: OrderInputSchema, db: Session = Depends(get_db)):
+    order_db = db.query(Order).filter(Order.id == order_id).first()
+    if not order_db:
+        raise HTTPException(detail='Заказ не найден', status_code=400)
+
+    for order_key, order_value in order.dict().items():
+        setattr(order_db, order_key, order_value)
+
+    db.commit()
+    db.refresh(order_db)
+    return {'message': 'Заказ изменен'}
+
+
+@order_router.delete('/{order_id}/', response_model=dict)
+async def delete_order(order_id: int, db: Session = Depends(get_db)):
+    order_db = db.query(Order).filter(Order.id == order_id).first()
+    if not order_db:
+        raise HTTPException(detail='Заказ не найден', status_code=400)
+
+    db.delete(order_db)
+    db.commit()
+    return {'message': 'Заказ удален'}
